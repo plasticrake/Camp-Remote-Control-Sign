@@ -4,10 +4,7 @@
 #include <WiFi.h>
 #include <esp_now.h>
 
-#define LED_PIN 13
-
-bool ledOn = false;
-
+#define BUTTON_COUNT 10
 simplebutton::GPIOExpander* expander = NULL;
 simplebutton::Button* buttonOne = NULL;
 simplebutton::Button* buttonTwo = NULL;
@@ -19,6 +16,7 @@ simplebutton::Button* buttonSeven = NULL;
 simplebutton::Button* buttonEight = NULL;
 simplebutton::Button* buttonNine = NULL;
 simplebutton::Button* buttonTen = NULL;
+simplebutton::Button* buttons[] = {buttonOne, buttonTwo, buttonThree, buttonFour, buttonFive, buttonSix, buttonSeven, buttonEight, buttonNine, buttonTen};
 
 // Global copy of slave
 esp_now_peer_info_t slave;
@@ -249,8 +247,7 @@ void setup() {
   buttonNine = new simplebutton::ButtonPullupGPIOExpander(expander, 8);
   buttonTen = new simplebutton::ButtonPullupGPIOExpander(expander, 9);
 
-  simplebutton::Button* buttons[] = {buttonOne, buttonTwo, buttonThree, buttonFour, buttonFive, buttonSix, buttonSeven, buttonEight, buttonNine, buttonTen};
-  for (int i = 0; i < 10; i++) {
+  for (int i = 0; i < BUTTON_COUNT; i++) {
     buttons[i]->setDefaultMinPushTime(100);
     buttons[i]->setDefaultMinReleaseTime(100);
   }
@@ -260,26 +257,11 @@ void setup() {
   Serial.println(WiFi.macAddress());
   InitESPNow();
   esp_now_register_send_cb(OnDataSent);
-
-  pinMode(LED_PIN, OUTPUT);
 }
 
 void loop() {
-  buttonOne->update();
-  buttonTwo->update();
-  buttonThree->update();
-  buttonFour->update();
-  buttonFive->update();
-  buttonSix->update();
-  buttonSeven->update();
-  buttonEight->update();
-  buttonNine->update();
-  buttonTen->update();
-
-  if (buttonOne->getState()) {
-    digitalWrite(LED_PIN, HIGH);
-  } else {
-    digitalWrite(LED_PIN, LOW);
+  for (int i = 0; i < BUTTON_COUNT; i++) {
+    buttons[i]->update();
   }
 
   if (buttonOne->clicked()) {
