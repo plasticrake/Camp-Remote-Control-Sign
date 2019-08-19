@@ -1,14 +1,26 @@
+// This program doesn't account for millis overflow. Which means it may be temporarily wonky after running for 50 days
 #include <Arduino.h>
 #include <FastLED.h>
 #include <WiFi.h>
 #include <esp_now.h>
 
+///////////////////
+// Configuration //
+///////////////////
+
+constexpr uint32_t TIME_TO_AUTOSWITCH_IN_SECONDS = 5 * 60;
+constexpr uint8_t MAX_BRIGHTNESS = 255;
+constexpr uint32_t FRAMES_PER_SECOND = 60;
+
+///////////////////
+
+constexpr uint32_t TIME_TO_AUTOSWITCH_IN_MS = TIME_TO_AUTOSWITCH_IN_SECONDS * 1000;
+uint8_t gBrightness = MAX_BRIGHTNESS;
+
 // FastLED
-#define NUM_LEDS 24 * 8 * 2
-#define BRIGHTNESS 255
-#define FRAMES_PER_SECOND 120
-#define DATA_PIN 27
-#define CLOCK_PIN 33
+constexpr uint16_t NUM_LEDS = 24 * 8 * 2;
+constexpr uint8_t DATA_PIN = 18;
+constexpr uint8_t CLOCK_PIN = 5;
 CRGB leds[NUM_LEDS];
 
 // ESP-now / WiFi
@@ -16,12 +28,33 @@ CRGB leds[NUM_LEDS];
 #define NODE_NAME "CRC_Sign_1"
 #define NODE_PASSWORD "CRC_Sign_1_Password"
 
-#define LED_PIN 13
+constexpr uint8_t LED_PIN = 13;
 bool ledOn = false;
+
+enum Commands { REMOTE_CONNECTED = 0,
+                PATTERN_ONE = 1,
+                PATTERN_TWO = 2,
+                PATTERN_THREE = 3,
+                PATTERN_FOUR = 4,
+                PATTERN_FIVE = 5,
+                PATTERN_SIX = 6,
+                PATTERN_SEVEN = 7,
+                PATTERN_EIGHT = 8,
+                PATTERN_NINE = 9,
+                PATTERN_TEN = 10,
+                BRIGHTNESS_UP = 101,
+                BRIGHTNESS_DOWN,
+                ADD_RED,
+                ADD_GREEN,
+                ADD_BLUE,
+                SPEED_UP,
+                SPEED_DOWN,
+                INITIAL_STATE };
 
 /************/
 /* Patterns */
 /************/
+CRGB gBaseColor = CRGB::Black;
 uint8_t gHue = 0;  // rotating "base color" used by many of the patterns
 
 void rainbow() {
@@ -77,8 +110,13 @@ void juggle() {
 
 typedef void (*SimplePatternList[])();
 SimplePatternList gPatterns = {rainbow, rainbowWithGlitter, confetti, sinelon, juggle, bpm, rainbow, rainbowWithGlitter, confetti, sinelon, juggle};
-uint8_t gPatternMax = 10;
+constexpr uint8_t PATTERN_COUNT = 10;
 uint8_t gCurrentPatternNumber = 0;  // Index number of which pattern is current
+
+void nextPattern() {
+  // add one to the current pattern number, and wrap around at the end
+  gCurrentPatternNumber = (gCurrentPatternNumber + 1) % PATTERN_COUNT;
+}
 
 // Init ESP Now with fallback
 void InitESPNow() {
@@ -102,8 +140,12 @@ void configDeviceAP() {
   }
 }
 
+unsigned long gLastMessageTime = 0;  // millis of last received message, we aren't handling overflow;
+
 // callback when data is recv from Master
 void OnDataRecv(const uint8_t* mac_addr, const uint8_t* data, int data_len) {
+  gLastMessageTime = millis();
+
   char macStr[18];
   snprintf(macStr, sizeof(macStr), "%02x:%02x:%02x:%02x:%02x:%02x",
            mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
@@ -113,10 +155,23 @@ void OnDataRecv(const uint8_t* mac_addr, const uint8_t* data, int data_len) {
   Serial.println(*data);
   Serial.println("");
 
-  if (*data > gPatternMax) {
-    gCurrentPatternNumber = gPatternMax;
-  } else {
+  if (*data == 0) {
+    gCurrentPatternNumber = PATTERN_COUNT;
+  } else if (*data > 0 && *data <= PATTERN_COUNT) {
+    gCurrentPatternNumber = PATTERN_COUNT;
+  } else if (*data == 100) {
     gCurrentPatternNumber = *data;
+  } else if (*data > 100 && *data < 100 + PATTERN_COUNT) {
+    switch (*data) {
+      case BRIGHTNESS_UP:
+        gBrightness = qadd8(gBrightness, 10);
+        FastLED.setBrightness(gBrightness);
+        break;
+      case BRIGHTNESS_DOWN:
+        gBrightness = qsub8(gBrightness, 10);
+        FastLED.setBrightness(gBrightness);
+        break;
+    }
   }
   ledOn = !ledOn;
 }
@@ -133,22 +188,25 @@ void setup() {
 
   pinMode(LED_PIN, OUTPUT);
 
-  FastLED.addLeds<APA102, DATA_PIN, CLOCK_PIN, BGR>(leds, NUM_LEDS);
-  FastLED.setBrightness(BRIGHTNESS);
+  FastLED.addLeds<APA102, DATA_PIN, CLOCK_PIN, BGR>(leds, NUM_LEDS).setCorrection(TypicalLEDStrip);
+  FastLED.setBrightness(gBrightness);
 }
 
 void loop() {
-  if (ledOn) {
-    digitalWrite(LED_PIN, HIGH);
-  } else {
-    digitalWrite(LED_PIN, LOW);
+  EVERY_N_MILLISECONDS(100) {
+    if (ledOn) {
+      digitalWrite(LED_PIN, HIGH);
+    } else {
+      digitalWrite(LED_PIN, LOW);
+    }
   }
-
+  // fill_solid(leds, NUM_LEDS, CRGB::Green);
   // Call the current pattern function once, updating the 'leds' array
   gPatterns[gCurrentPatternNumber]();
   FastLED.show();
   // insert a delay to keep the framerate modest
   FastLED.delay(1000 / FRAMES_PER_SECOND);
+  // delay(1000 / FRAMES_PER_SECOND);
 
   EVERY_N_MILLISECONDS(20) { gHue++; }  // slowly cycle the "base color" through the rainbow
 }
