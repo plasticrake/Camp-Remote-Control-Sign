@@ -1,10 +1,25 @@
+// This program doesn't account for millis overflow. Which means it may be temporarily wonky after running for 50 days
+#include "Adafruit_TLC5947.h"
 #include <Arduino.h>
 #include <FastLED.h>
 #include <SimpleButton.h>
 #include <WiFi.h>
 #include <esp_now.h>
 
-#define BUTTON_COUNT 10
+///////////////////
+// Configuration //
+///////////////////
+
+constexpr uint32_t TIME_TO_IDLE_IN_SECONDS = 5;
+constexpr uint32_t TIME_TO_AUTOSWITCH_IN_SECONDS = 10;
+constexpr uint16_t MAX_BRIGHTNESS = 4095;
+
+///////////////////
+
+constexpr uint32_t TIME_TO_IDLE_IN_MS = TIME_TO_IDLE_IN_SECONDS * 1000;
+constexpr uint32_t TIME_TO_AUTOSWITCH_IN_MS = TIME_TO_AUTOSWITCH_IN_SECONDS * 1000;
+
+constexpr uint8_t BUTTON_COUNT = 11;
 simplebutton::GPIOExpander* expander = NULL;
 simplebutton::Button* buttonOne = NULL;
 simplebutton::Button* buttonTwo = NULL;
@@ -16,7 +31,30 @@ simplebutton::Button* buttonSeven = NULL;
 simplebutton::Button* buttonEight = NULL;
 simplebutton::Button* buttonNine = NULL;
 simplebutton::Button* buttonTen = NULL;
-simplebutton::Button* buttons[] = {buttonOne, buttonTwo, buttonThree, buttonFour, buttonFive, buttonSix, buttonSeven, buttonEight, buttonNine, buttonTen};
+simplebutton::Button* buttonBonus = NULL;
+simplebutton::Button* buttons[] = {buttonOne, buttonTwo, buttonThree, buttonFour, buttonFive, buttonSix, buttonSeven, buttonEight, buttonNine, buttonTen, buttonBonus};
+
+enum ButtonId : uint8_t { NONE = 0,
+                          ONE = 1,
+                          TWO,
+                          THREE,
+                          FOUR,
+                          FIVE,
+                          SIX,
+                          SEVEN,
+                          EIGHT,
+                          NINE,
+                          TEN,
+                          BONUS };
+
+constexpr uint8_t buttonLedPin[] = {12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22};
+
+// Button LEDs
+constexpr uint8_t NUM_TLC5974 = 1;
+constexpr uint8_t DATA_PIN = 27;
+constexpr uint8_t CLOCK_PIN = 33;
+constexpr uint8_t LATCH_PIN = 15;
+Adafruit_TLC5947 tlc = Adafruit_TLC5947(NUM_TLC5974, CLOCK_PIN, DATA_PIN, LATCH_PIN);
 
 // Global copy of slave
 esp_now_peer_info_t slave;
@@ -225,6 +263,8 @@ void setup() {
   Wire.begin();
   expander = new simplebutton::MCP23017(0x20);
 
+  tlc.begin();
+
   do {
     // check for errors
     if (!expander->connected()) {
@@ -246,11 +286,12 @@ void setup() {
   buttonEight = new simplebutton::ButtonPullupGPIOExpander(expander, 7);
   buttonNine = new simplebutton::ButtonPullupGPIOExpander(expander, 8);
   buttonTen = new simplebutton::ButtonPullupGPIOExpander(expander, 9);
+  buttonBonus = new simplebutton::ButtonPullupGPIOExpander(expander, 10);
 
-  for (int i = 0; i < BUTTON_COUNT; i++) {
-    buttons[i]->setDefaultMinPushTime(100);
-    buttons[i]->setDefaultMinReleaseTime(100);
-  }
+  // for (int i = 0; i < BUTTON_COUNT; i++) {
+  //   buttons[i]->setDefaultMinPushTime(100);
+  //   buttons[i]->setDefaultMinReleaseTime(100);
+  // }
 
   WiFi.mode(WIFI_STA);
   Serial.print("STA MAC: ");
@@ -259,41 +300,134 @@ void setup() {
   esp_now_register_send_cb(OnDataSent);
 }
 
-void loop() {
-  for (int i = 0; i < BUTTON_COUNT; i++) {
-    buttons[i]->update();
+void updateButtons() {
+  buttonOne->update();
+  buttonTwo->update();
+  buttonThree->update();
+  buttonFour->update();
+  buttonFive->update();
+  buttonSix->update();
+  buttonSeven->update();
+  buttonEight->update();
+  buttonNine->update();
+  buttonTen->update();
+  buttonBonus->update();
+}
+
+ButtonId getCurrentClickedButton() {
+  if (buttonOne->clicked()) { return ONE; }
+  if (buttonTwo->clicked()) { return TWO; }
+  if (buttonThree->clicked()) { return THREE; }
+  if (buttonFour->clicked()) { return FOUR; }
+  if (buttonFive->clicked()) { return FIVE; }
+  if (buttonSix->clicked()) { return SIX; }
+  if (buttonSeven->clicked()) { return SEVEN; }
+  if (buttonEight->clicked()) { return EIGHT; }
+  if (buttonNine->clicked()) { return NINE; }
+  if (buttonTen->clicked()) { return TEN; }
+  if (buttonBonus->clicked()) { return BONUS; }
+  return NONE;
+}
+
+bool getBonusModeStatus() {
+  return (buttonBonus->holding());
+}
+
+uint8_t getPinForButton(uint8_t buttonId) {
+  return buttonLedPin[buttonId - 1];
+}
+
+enum RemoteMode { NORMAL,
+                  CHORD,  // Bonus held down, chord mode
+                  IDLE
+};
+
+void updateButtonDisplay(uint8_t clickedButton, uint8_t activeButton, bool bonusHeld, RemoteMode mode, bool patternIsSticky) {
+  if (mode == IDLE) {
+    for (size_t i = 0; i < BUTTON_COUNT; i++) {
+      tlc.setPWM(getPinForButton(i), beatsin16(100, 0, MAX_BRIGHTNESS, 0, 65536 / 2));
+    }
+  } else {
+    for (size_t i = 0; i < BUTTON_COUNT; i++) {
+      tlc.setPWM(getPinForButton(i), 0);
+    }
   }
 
-  if (buttonOne->clicked()) {
-    sendData(1);
+  if (activeButton != NONE) {
+    tlc.setPWM(getPinForButton(activeButton), beatsin16(200, MAX_BRIGHTNESS / 2, MAX_BRIGHTNESS));
   }
-  if (buttonTwo->clicked()) {
-    sendData(2);
+
+  if (bonusHeld) {
+    tlc.setPWM(getPinForButton(BONUS), beatsin16(300, MAX_BRIGHTNESS / 2, MAX_BRIGHTNESS));
+  } else if (patternIsSticky) {
+    tlc.setPWM(getPinForButton(BONUS), beatsin16(50, MAX_BRIGHTNESS / 2, MAX_BRIGHTNESS));
   }
-  if (buttonThree->clicked()) {
-    sendData(3);
+
+  tlc.write();
+}
+
+bool getPatternIsSticky(bool patternIsSticky) {
+  if (buttonBonus->doubleClicked()) {
+    return !patternIsSticky;
   }
-  if (buttonFour->clicked()) {
-    sendData(4);
+  return patternIsSticky;
+}
+
+bool getIsIdle(unsigned long timeOfLastAction) {
+  return ((millis() - timeOfLastAction) > TIME_TO_IDLE_IN_MS);
+}
+
+bool getShouldAutoSwitchPattern(bool patternIsSticky, unsigned long timeOfLastAction, unsigned long timeOfLastPatternSwitch) {
+  if (patternIsSticky) return false;
+  return ((millis() - max(timeOfLastAction, timeOfLastPatternSwitch)) > TIME_TO_AUTOSWITCH_IN_MS);
+}
+
+ButtonId getNextPattern(uint8_t activeButton) {
+  if (activeButton == TEN) {
+    return ONE;
   }
-  if (buttonFive->clicked()) {
-    sendData(5);
+  return static_cast<ButtonId>(activeButton + 1);
+}
+
+void loop() {
+  static unsigned long timeOfLastAction = 0;         // millis of last user action, we aren't handling overflow;
+  static unsigned long timeOfLastPatternSwitch = 0;  // millis of last pattern switch, we aren't handling overflow;
+  static uint8_t activeButton = 0;                   // Active button / pattern
+  static bool patternIsSticky = false;               // Remote in sticky mode, disable auto pattern switch
+
+  static RemoteMode mode = NORMAL;
+
+  updateButtons();
+
+  patternIsSticky = getPatternIsSticky(patternIsSticky);
+
+  ButtonId clickedButton = NONE;  // Button currently clicked, or next pattern if during auto pattern switch;
+  bool bonusHeld = false;
+  if (getShouldAutoSwitchPattern(patternIsSticky, timeOfLastAction, timeOfLastPatternSwitch)) {
+    clickedButton = getNextPattern(activeButton);
+  } else {
+    clickedButton = getCurrentClickedButton();
+    bonusHeld = getBonusModeStatus();
   }
-  if (buttonSix->clicked()) {
-    sendData(6);
+
+  if (clickedButton > NONE) {
+    timeOfLastAction = millis();
+    if (clickedButton <= 10 && bonusHeld) {
+      sendData(clickedButton + 100);
+    } else {
+      sendData(clickedButton);
+      activeButton = clickedButton;
+      timeOfLastPatternSwitch = millis();
+    }
   }
-  if (buttonSeven->clicked()) {
-    sendData(7);
+
+  if (getIsIdle(timeOfLastAction)) {
+    mode = IDLE;
+  } else {
+    mode = NORMAL;
   }
-  if (buttonEight->clicked()) {
-    sendData(8);
-  }
-  if (buttonNine->clicked()) {
-    sendData(9);
-  }
-  if (buttonTen->clicked()) {
-    sendData(10);
-  }
+
+  updateButtonDisplay(clickedButton, activeButton, bonusHeld, mode, patternIsSticky);
 
   if (!slaveFound) {
     EVERY_N_SECONDS(5) {
