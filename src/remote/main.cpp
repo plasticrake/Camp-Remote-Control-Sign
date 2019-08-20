@@ -452,9 +452,8 @@ void loop() {
   }
 
   if (clickedButton > NONE) {
-    timeOfLastAction = millis();
     if (clickedButton <= 10 && bonusHeld) {
-      sendData(clickedButton + 100);
+      sendData(clickedButton + 200);
     } else {
       sendData(clickedButton);
       activeButton = clickedButton;
