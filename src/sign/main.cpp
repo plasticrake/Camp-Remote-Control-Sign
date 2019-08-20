@@ -38,26 +38,6 @@ constexpr uint8_t CentreY = (MATRIX_HEIGHT / 2) - 1;
 constexpr uint8_t LED_PIN = 13;
 bool ledOn = false;
 
-enum Commands { REMOTE_CONNECTED = 0,
-                PATTERN_ONE = 1,
-                PATTERN_TWO = 2,
-                PATTERN_THREE = 3,
-                PATTERN_FOUR = 4,
-                PATTERN_FIVE = 5,
-                PATTERN_SIX = 6,
-                PATTERN_SEVEN = 7,
-                PATTERN_EIGHT = 8,
-                PATTERN_NINE = 9,
-                PATTERN_TEN = 10,
-                BRIGHTNESS_UP = 101,
-                BRIGHTNESS_DOWN,
-                ADD_RED,
-                ADD_GREEN,
-                ADD_BLUE,
-                SPEED_UP,
-                SPEED_DOWN,
-                INITIAL_STATE };
-
 /************/
 /* Patterns */
 /************/
