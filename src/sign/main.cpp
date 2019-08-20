@@ -10,7 +10,7 @@
 
 constexpr uint32_t TIME_TO_AUTOSWITCH_IN_SECONDS = 5 * 60;
 constexpr uint8_t MAX_BRIGHTNESS = 255;
-constexpr uint32_t FRAMES_PER_SECOND = 60;
+constexpr uint32_t FRAMES_PER_SECOND = 120;
 
 ///////////////////
 
