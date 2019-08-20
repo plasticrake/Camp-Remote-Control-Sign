@@ -329,6 +329,21 @@ ButtonId getCurrentClickedButton() {
   return NONE;
 }
 
+ButtonId getCurrentHeldButton() {
+  if (buttonOne->holding()) { return ONE; }
+  if (buttonTwo->holding()) { return TWO; }
+  if (buttonThree->holding()) { return THREE; }
+  if (buttonFour->holding()) { return FOUR; }
+  if (buttonFive->holding()) { return FIVE; }
+  if (buttonSix->holding()) { return SIX; }
+  if (buttonSeven->holding()) { return SEVEN; }
+  if (buttonEight->holding()) { return EIGHT; }
+  if (buttonNine->holding()) { return NINE; }
+  if (buttonTen->holding()) { return TEN; }
+  if (buttonBonus->holding()) { return BONUS; }
+  return NONE;
+}
+
 bool getBonusModeStatus() {
   return (buttonBonus->holding());
 }
@@ -401,13 +416,33 @@ void loop() {
 
   patternIsSticky = getPatternIsSticky(patternIsSticky);
 
+  bool bonusHeld = false;         // BONUS currently held
+  ButtonId heldButton = NONE;     // Button currently held (excluding BONUS button)
   ButtonId clickedButton = NONE;  // Button currently clicked, or next pattern if during auto pattern switch;
-  bool bonusHeld = false;
   if (getShouldAutoSwitchPattern(patternIsSticky, timeOfLastAction, timeOfLastPatternSwitch)) {
     clickedButton = getNextPattern(activeButton);
+    Serial.print("Auto Switching from ");
+    Serial.print(activeButton);
+    Serial.print(" to ");
+    Serial.println(clickedButton);
   } else {
-    clickedButton = getCurrentClickedButton();
     bonusHeld = getBonusModeStatus();
+    heldButton = getCurrentHeldButton();
+    clickedButton = getCurrentClickedButton();
+    if (clickedButton != NONE) {
+      Serial.print("Button Clicked: ");
+      Serial.println(clickedButton);
+    }
+    if (heldButton != NONE) {
+      Serial.print("Button Held: ");
+      Serial.println(heldButton);
+    }
+    if (bonusHeld) {
+      Serial.println("BONUS Held");
+    }
+    if (clickedButton != NONE || heldButton != NONE || bonusHeld) {
+      timeOfLastAction = millis();
+    }
   }
 
   if (clickedButton > NONE) {
@@ -418,6 +453,11 @@ void loop() {
       sendData(clickedButton);
       activeButton = clickedButton;
       timeOfLastPatternSwitch = millis();
+    }
+  } else if (bonusHeld && heldButton > NONE) {
+    EVERY_N_MILLISECONDS(10) {
+      timeOfLastAction = millis();
+      sendData(clickedButton + 100);
     }
   }
 
