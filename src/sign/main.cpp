@@ -19,9 +19,16 @@ uint8_t gBrightness = MAX_BRIGHTNESS;
 
 // FastLED
 constexpr uint16_t NUM_LEDS = 24 * 8 * 2;
-constexpr uint8_t DATA_PIN = 18;
-constexpr uint8_t CLOCK_PIN = 5;
+constexpr uint8_t DATA1_PIN = 27;
+constexpr uint8_t CLOCK1_PIN = 33;
+constexpr uint8_t DATA2_PIN = 15;
+constexpr uint8_t CLOCK2_PIN = 32;
 CRGB leds[NUM_LEDS];
+
+constexpr uint8_t MATRIX_WIDTH = 16;
+constexpr uint8_t MATRIX_HEIGHT = 24;
+constexpr uint8_t CentreX = (MATRIX_WIDTH / 2) - 1;
+constexpr uint8_t CentreY = (MATRIX_HEIGHT / 2) - 1;
 
 // ESP-now / WiFi
 #define CHANNEL 1
@@ -188,7 +195,8 @@ void setup() {
 
   pinMode(LED_PIN, OUTPUT);
 
-  FastLED.addLeds<APA102, DATA_PIN, CLOCK_PIN, BGR>(leds, NUM_LEDS).setCorrection(TypicalLEDStrip);
+  FastLED.addLeds<APA102, DATA1_PIN, CLOCK1_PIN, BGR>(leds, NUM_LEDS / 2).setCorrection(TypicalLEDStrip);
+  FastLED.addLeds<APA102, DATA2_PIN, CLOCK2_PIN, BGR>(leds, NUM_LEDS / 2, NUM_LEDS / 2).setCorrection(TypicalLEDStrip);
   FastLED.setBrightness(gBrightness);
 }
 
