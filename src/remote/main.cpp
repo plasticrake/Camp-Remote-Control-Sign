@@ -358,9 +358,15 @@ enum RemoteMode { NORMAL,
 };
 
 void updateButtonDisplay(uint8_t clickedButton, uint8_t activeButton, bool bonusHeld, RemoteMode mode, bool patternIsSticky) {
+  if (!slaveFound) {
+    tlc.setPWM(getPinForButton(FIVE), beatsin16(10, 0, MAX_BRIGHTNESS));
+    tlc.write();
+    return;
+  }
+
   if (mode == IDLE) {
     for (size_t i = 0; i < BUTTON_COUNT; i++) {
-      tlc.setPWM(getPinForButton(i), beatsin16(100, 0, MAX_BRIGHTNESS, 0, 65536 / 2));
+      tlc.setPWM(getPinForButton(i), beatsin16(10, 0, (MAX_BRIGHTNESS / 4)));
     }
   } else {
     for (size_t i = 0; i < BUTTON_COUNT; i++) {
@@ -369,13 +375,13 @@ void updateButtonDisplay(uint8_t clickedButton, uint8_t activeButton, bool bonus
   }
 
   if (activeButton != NONE) {
-    tlc.setPWM(getPinForButton(activeButton), beatsin16(200, MAX_BRIGHTNESS / 2, MAX_BRIGHTNESS));
+    tlc.setPWM(getPinForButton(activeButton), beatsin16(200, (MAX_BRIGHTNESS / 4), MAX_BRIGHTNESS));
   }
 
   if (bonusHeld) {
-    tlc.setPWM(getPinForButton(BONUS), beatsin16(300, MAX_BRIGHTNESS / 2, MAX_BRIGHTNESS));
+    tlc.setPWM(getPinForButton(BONUS), beatsin16(300, (MAX_BRIGHTNESS / 4), MAX_BRIGHTNESS));
   } else if (patternIsSticky) {
-    tlc.setPWM(getPinForButton(BONUS), beatsin16(50, MAX_BRIGHTNESS / 2, MAX_BRIGHTNESS));
+    tlc.setPWM(getPinForButton(BONUS), beatsin16(50, (MAX_BRIGHTNESS / 2), MAX_BRIGHTNESS));
   }
 
   tlc.write();
