@@ -16,4 +16,4 @@ enum Commands { REMOTE_CONNECTED = 0,
                 ADD_BLUE = 108,
                 SPEED_UP = 103,
                 SPEED_DOWN = 106,
-                INITIAL_STATE = 110 };
+                INITIAL_STATE = 210 };
