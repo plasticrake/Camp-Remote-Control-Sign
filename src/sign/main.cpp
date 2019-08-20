@@ -8,7 +8,7 @@
 // Configuration //
 ///////////////////
 
-constexpr uint32_t TIME_TO_AUTOSWITCH_IN_SECONDS = 5 * 60;
+constexpr uint32_t TIME_TO_AUTOSWITCH_IN_SECONDS = 60 * 2;
 constexpr uint8_t MAX_BRIGHTNESS = 255;
 constexpr uint32_t FRAMES_PER_SECOND = 120;
 
@@ -101,8 +101,16 @@ constexpr uint8_t PATTERN_COUNT = 10;
 uint8_t gCurrentPatternNumber = 0;  // Index number of which pattern is current
 
 void nextPattern() {
+  Serial.print("nextPattern ");
+  Serial.print(gCurrentPatternNumber);
+  Serial.print(" to ");
   // add one to the current pattern number, and wrap around at the end
-  gCurrentPatternNumber = (gCurrentPatternNumber + 1) % PATTERN_COUNT;
+  gCurrentPatternNumber = (gCurrentPatternNumber + 1) % (PATTERN_COUNT - 1);
+  if (gCurrentPatternNumber == 0) {
+    //skip the `connected` pattern
+    gCurrentPatternNumber++;
+  }
+  Serial.println(gCurrentPatternNumber);
 }
 
 // Init ESP Now with fallback
@@ -181,6 +189,14 @@ void setup() {
 }
 
 void loop() {
+  EVERY_N_SECONDS(5) {
+    Serial.println(gCurrentPatternNumber);
+
+    if (millis() - gLastMessageTime > TIME_TO_AUTOSWITCH_IN_MS) {
+      nextPattern();
+    }
+  }
+
   EVERY_N_MILLISECONDS(100) {
     if (ledOn) {
       digitalWrite(LED_PIN, HIGH);
