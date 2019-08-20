@@ -357,7 +357,7 @@ enum RemoteMode { NORMAL,
                   IDLE
 };
 
-void updateButtonDisplay(uint8_t clickedButton, uint8_t activeButton, bool bonusHeld, RemoteMode mode, bool patternIsSticky) {
+void updateButtonDisplay(ButtonId clickedButton, ButtonId activeButton, ButtonId heldButton, bool bonusHeld, RemoteMode mode, bool patternIsSticky) {
   if (!slaveFound) {
     tlc.setPWM(getPinForButton(FIVE), beatsin16(10, 0, MAX_BRIGHTNESS));
     tlc.write();
@@ -380,6 +380,11 @@ void updateButtonDisplay(uint8_t clickedButton, uint8_t activeButton, bool bonus
 
   if (bonusHeld) {
     tlc.setPWM(getPinForButton(BONUS), beatsin16(300, (MAX_BRIGHTNESS / 4), MAX_BRIGHTNESS));
+
+    if (heldButton != NONE) {
+      tlc.setPWM(getPinForButton(BONUS), beatsin16(300, (MAX_BRIGHTNESS / 4), MAX_BRIGHTNESS));
+    }
+
   } else if (patternIsSticky) {
     tlc.setPWM(getPinForButton(BONUS), beatsin16(50, (MAX_BRIGHTNESS / 2), MAX_BRIGHTNESS));
   }
@@ -413,7 +418,7 @@ ButtonId getNextPattern(uint8_t activeButton) {
 void loop() {
   static unsigned long timeOfLastAction = 0;         // millis of last user action, we aren't handling overflow;
   static unsigned long timeOfLastPatternSwitch = 0;  // millis of last pattern switch, we aren't handling overflow;
-  static uint8_t activeButton = 0;                   // Active button / pattern
+  static ButtonId activeButton = NONE;               // Active button / pattern
   static bool patternIsSticky = false;               // Remote in sticky mode, disable auto pattern switch
 
   static RemoteMode mode = NORMAL;
@@ -462,7 +467,7 @@ void loop() {
   } else if (bonusHeld && heldButton > NONE) {
     EVERY_N_MILLISECONDS(10) {
       timeOfLastAction = millis();
-      sendData(clickedButton + 100);
+      sendData(heldButton + 100);
     }
   }
 
@@ -472,7 +477,7 @@ void loop() {
     mode = NORMAL;
   }
 
-  updateButtonDisplay(clickedButton, activeButton, bonusHeld, mode, patternIsSticky);
+  updateButtonDisplay(clickedButton, activeButton, heldButton, bonusHeld, mode, patternIsSticky);
 
   if (!slaveFound) {
     EVERY_N_SECONDS(5) {
