@@ -3,5 +3,8 @@
     "PATH": "/Users/patrick/.platformio/penv/bin:/Users/patrick/.platformio/penv:/usr/local/opt/python/libexec/bin:/Users/patrick/.jenv/shims:/usr/local/opt/jenv/bin:./node_modules/.bin:./bin:/Users/patrick/.bin:/Users/patrick/.node/bin:/usr/local/bin:/usr/local/sbin:/Users/patrick/.dotfiles/bin:/Users/patrick/.jenv/shims:/Users/patrick/.jenv/bin:/Users/patrick/Code/go/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/MacGPG2/bin:/Applications/Wireshark.app/Contents/MacOS:/usr/local/sbin:/Users/patrick/.platformio/penv/bin:/Users/patrick/go/bin",
     "PLATFORMIO_CALLER": "vscode"
   },
-  "editor.formatOnSave": true
+  "editor.formatOnSave": true,
+  "files.associations": {
+    "array": "cpp"
+  }
 }

@@ -1,5 +1,6 @@
 // This program doesn't account for millis overflow. Which means it may be temporarily wonky after running for 50 days
-#include "Adafruit_TLC5947.h"
+#include "commands.h"
+#include <Adafruit_TLC5947.h>
 #include <Arduino.h>
 #include <FastLED.h>
 #include <SimpleButton.h>
@@ -10,8 +11,8 @@
 // Configuration //
 ///////////////////
 
-constexpr uint32_t TIME_TO_IDLE_IN_SECONDS = 5;
-constexpr uint32_t TIME_TO_AUTOSWITCH_IN_SECONDS = 10;
+constexpr uint32_t TIME_TO_IDLE_IN_SECONDS = 20;
+constexpr uint32_t TIME_TO_AUTOSWITCH_IN_SECONDS = 60;
 constexpr uint16_t MAX_BRIGHTNESS = 4095;
 
 ///////////////////
@@ -33,19 +34,6 @@ simplebutton::Button* buttonNine = NULL;
 simplebutton::Button* buttonTen = NULL;
 simplebutton::Button* buttonBonus = NULL;
 simplebutton::Button* buttons[] = {buttonOne, buttonTwo, buttonThree, buttonFour, buttonFive, buttonSix, buttonSeven, buttonEight, buttonNine, buttonTen, buttonBonus};
-
-enum ButtonId : uint8_t { NONE = 0,
-                          ONE = 1,
-                          TWO,
-                          THREE,
-                          FOUR,
-                          FIVE,
-                          SIX,
-                          SEVEN,
-                          EIGHT,
-                          NINE,
-                          TEN,
-                          BONUS };
 
 constexpr uint8_t buttonLedPin[] = {12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22};
 
@@ -151,7 +139,6 @@ void ScanForSlave() {
 }
 
 void deletePeer() {
-  const esp_now_peer_info_t* peer = &slave;
   const uint8_t* peer_addr = slave.peer_addr;
   esp_err_t delStatus = esp_now_del_peer(peer_addr);
   Serial.print("Slave Delete Status: ");
@@ -276,6 +263,8 @@ void setup() {
   } while (!expander->connected());
   Serial.println("Port Expander Connected");
 
+  initializeButtonToCommand();
+
   buttonOne = new simplebutton::ButtonPullupGPIOExpander(expander, 0);
   buttonTwo = new simplebutton::ButtonPullupGPIOExpander(expander, 1);
   buttonThree = new simplebutton::ButtonPullupGPIOExpander(expander, 2);
@@ -326,7 +315,7 @@ ButtonId getCurrentClickedButton() {
   if (buttonNine->clicked()) { return NINE; }
   if (buttonTen->clicked()) { return TEN; }
   if (buttonBonus->clicked()) { return BONUS; }
-  return NONE;
+  return NO_BUTTON;
 }
 
 ButtonId getCurrentHeldButton() {
@@ -340,12 +329,17 @@ ButtonId getCurrentHeldButton() {
   if (buttonEight->holding()) { return EIGHT; }
   if (buttonNine->holding()) { return NINE; }
   if (buttonTen->holding()) { return TEN; }
-  if (buttonBonus->holding()) { return BONUS; }
-  return NONE;
+  return NO_BUTTON;
 }
 
 bool getBonusModeStatus() {
-  return (buttonBonus->holding());
+  static unsigned long bonusLastHeld = 0;
+
+  if (buttonBonus->holding()) {
+    bonusLastHeld = millis();
+    return true;
+  }
+  return (millis() - bonusLastHeld < 250);
 }
 
 uint8_t getPinForButton(uint8_t buttonId) {
@@ -365,28 +359,28 @@ void updateButtonDisplay(ButtonId clickedButton, ButtonId activeButton, ButtonId
   }
 
   if (mode == IDLE) {
-    for (size_t i = 0; i < BUTTON_COUNT; i++) {
+    for (size_t i = 1; i < BUTTON_COUNT + 1; i++) {
       tlc.setPWM(getPinForButton(i), beatsin16(10, 0, (MAX_BRIGHTNESS / 4)));
     }
   } else {
-    for (size_t i = 0; i < BUTTON_COUNT; i++) {
+    for (size_t i = 1; i < BUTTON_COUNT + 1; i++) {
       tlc.setPWM(getPinForButton(i), 0);
     }
   }
 
-  if (activeButton != NONE) {
+  if (activeButton != NO_BUTTON) {
     tlc.setPWM(getPinForButton(activeButton), beatsin16(200, (MAX_BRIGHTNESS / 4), MAX_BRIGHTNESS));
   }
 
   if (bonusHeld) {
-    tlc.setPWM(getPinForButton(BONUS), beatsin16(300, (MAX_BRIGHTNESS / 4), MAX_BRIGHTNESS));
+    tlc.setPWM(getPinForButton(BONUS), beatsin16(200, (MAX_BRIGHTNESS / 4), MAX_BRIGHTNESS));
 
-    if (heldButton != NONE) {
-      tlc.setPWM(getPinForButton(BONUS), beatsin16(300, (MAX_BRIGHTNESS / 4), MAX_BRIGHTNESS));
+    if (heldButton != NO_BUTTON) {
+      tlc.setPWM(getPinForButton(heldButton), beatsin16(200, (MAX_BRIGHTNESS / 4), MAX_BRIGHTNESS));
     }
 
   } else if (patternIsSticky) {
-    tlc.setPWM(getPinForButton(BONUS), beatsin16(50, (MAX_BRIGHTNESS / 2), MAX_BRIGHTNESS));
+    tlc.setPWM(getPinForButton(BONUS), MAX_BRIGHTNESS);
   }
 
   tlc.write();
@@ -394,6 +388,8 @@ void updateButtonDisplay(ButtonId clickedButton, ButtonId activeButton, ButtonId
 
 bool getPatternIsSticky(bool patternIsSticky) {
   if (buttonBonus->doubleClicked()) {
+    Serial.print("patternIsSticky ");
+    Serial.println(!patternIsSticky);
     return !patternIsSticky;
   }
   return patternIsSticky;
@@ -416,22 +412,25 @@ ButtonId getNextPattern(uint8_t activeButton) {
 }
 
 void loop() {
+  static unsigned long loopId = 0;
   static unsigned long timeOfLastAction = 0;         // millis of last user action, we aren't handling overflow;
   static unsigned long timeOfLastPatternSwitch = 0;  // millis of last pattern switch, we aren't handling overflow;
-  static ButtonId activeButton = NONE;               // Active button / pattern
+  static ButtonId activeButton = NO_BUTTON;          // Active button / pattern
   static bool patternIsSticky = false;               // Remote in sticky mode, disable auto pattern switch
 
   static RemoteMode mode = NORMAL;
 
+  loopId++;
   updateButtons();
 
   patternIsSticky = getPatternIsSticky(patternIsSticky);
 
-  bool bonusHeld = false;         // BONUS currently held
-  ButtonId heldButton = NONE;     // Button currently held (excluding BONUS button)
-  ButtonId clickedButton = NONE;  // Button currently clicked, or next pattern if during auto pattern switch;
+  bool bonusHeld = false;              // BONUS currently held
+  ButtonId heldButton = NO_BUTTON;     // Button currently held (excluding BONUS button)
+  ButtonId clickedButton = NO_BUTTON;  // Button currently clicked, or next pattern if during auto pattern switch;
   if (getShouldAutoSwitchPattern(patternIsSticky, timeOfLastAction, timeOfLastPatternSwitch)) {
     clickedButton = getNextPattern(activeButton);
+    timeOfLastPatternSwitch = millis();
     Serial.print("Auto Switching from ");
     Serial.print(activeButton);
     Serial.print(" to ");
@@ -440,34 +439,40 @@ void loop() {
     bonusHeld = getBonusModeStatus();
     heldButton = getCurrentHeldButton();
     clickedButton = getCurrentClickedButton();
-    if (clickedButton != NONE) {
-      Serial.print("Button Clicked: ");
+    if (clickedButton != NO_BUTTON) {
+      Serial.print(loopId);
+      Serial.print(" Button Clicked: ");
       Serial.println(clickedButton);
     }
-    if (heldButton != NONE) {
-      Serial.print("Button Held: ");
+    if (heldButton != NO_BUTTON) {
+      Serial.print(loopId);
+      Serial.print(" Button Held: ");
       Serial.println(heldButton);
     }
     if (bonusHeld) {
-      Serial.println("BONUS Held");
+      // Serial.print(loopId);
+      // Serial.println(" BONUS Held");
     }
-    if (clickedButton != NONE || heldButton != NONE || bonusHeld) {
+    if (clickedButton != NO_BUTTON || heldButton != NO_BUTTON || bonusHeld) {
       timeOfLastAction = millis();
     }
   }
 
-  if (clickedButton > NONE) {
+  if (clickedButton > NO_BUTTON) {
     if (clickedButton <= 10 && bonusHeld) {
-      sendData(clickedButton + 200);
+      sendData(buttonToCommand[clickedButton + BONUS_CLICKED]);
     } else {
-      sendData(clickedButton);
-      activeButton = clickedButton;
-      timeOfLastPatternSwitch = millis();
+      sendData(buttonToCommand[clickedButton + CLICKED]);
+      if (clickedButton != BONUS) {
+        activeButton = clickedButton;
+        timeOfLastPatternSwitch = millis();
+      }
     }
-  } else if (bonusHeld && heldButton > NONE) {
+  }
+  if (bonusHeld && heldButton > NO_BUTTON) {
     EVERY_N_MILLISECONDS(10) {
       timeOfLastAction = millis();
-      sendData(heldButton + 100);
+      sendData(buttonToCommand[heldButton + HELD]);
     }
   }
 
@@ -478,6 +483,10 @@ void loop() {
   }
 
   updateButtonDisplay(clickedButton, activeButton, heldButton, bonusHeld, mode, patternIsSticky);
+
+  EVERY_N_SECONDS(30) {
+    sendData(HEARTBEAT);
+  }
 
   if (!slaveFound) {
     EVERY_N_SECONDS(5) {
@@ -491,7 +500,7 @@ void loop() {
         if (isPaired) {
           // pair success or already paired
           // Send data to device
-          sendData(0);
+          sendData(REMOTE_CONNECTED);
         } else {
           Serial.println("Slave pair failed!");
         }

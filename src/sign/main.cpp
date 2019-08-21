@@ -5,6 +5,8 @@
 #include <WiFi.h>
 #include <esp_now.h>
 
+// TODO pattern count biz
+
 ///////////////////
 // Configuration //
 ///////////////////
@@ -17,6 +19,8 @@ constexpr uint32_t FRAMES_PER_SECOND = 120;
 
 constexpr uint32_t TIME_TO_AUTOSWITCH_IN_MS = TIME_TO_AUTOSWITCH_IN_SECONDS * 1000;
 uint8_t gBrightness = MAX_BRIGHTNESS;
+
+fract8 gSpeed = 255 / 2;
 
 // FastLED
 constexpr uint16_t NUM_LEDS = 24 * 8 * 2;
@@ -39,20 +43,32 @@ constexpr uint8_t CentreY = (MATRIX_HEIGHT / 2) - 1;
 constexpr uint8_t LED_PIN = 13;
 bool ledOn = false;
 
+void changePattern(uint8_t patternNumber);
+
 /************/
 /* Patterns */
 /************/
 CRGB gBaseColor = CRGB::White;
 uint8_t gHue = 0;  // rotating "base color" used by many of the patterns
 
+CRGBPalette16 gPalettes[] = {RainbowColors_p, CloudColors_p, LavaColors_p, OceanColors_p, ForestColors_p, RainbowStripeColors_p, PartyColors_p, HeatColors_p};
+uint8_t gPaletteIndex = 0;
+CRGBPalette16 gPalette = gPalettes[0];
+constexpr uint8_t PALETTE_COUNT = 8;
+
 constexpr uint8_t PATTERN_COUNT = 11;
 uint8_t gCurrentPatternNumber = 0;  // Index number of which pattern is current
 
 void nextPattern(void);
 
-void connected(void);
-void rainbow(void);
+void connected(bool init);
+void rainbow(bool init);
 void addGlitter(fract8 chanceOfGlitter, CRGB glitterColor);
+
+void nextPalette(uint8_t step = 1) {
+  gPaletteIndex = (gPaletteIndex + step) % PALETTE_COUNT;
+  gPalette = gPalettes[gPaletteIndex];
+}
 
 uint16_t XY(uint8_t x, uint8_t y) {
   uint16_t i;
@@ -67,11 +83,11 @@ uint16_t XY(uint8_t x, uint8_t y) {
   return i;
 }
 
-void connected() {
+void connected(bool init = false) {
   static unsigned long startTime = 0;
   static fract8 chanceOfGlitter = 0;
 
-  rainbow();
+  rainbow(init);
 
   for (size_t i = 0; i < chanceOfGlitter; i++) {
     addGlitter(chanceOfGlitter, gHue);
@@ -105,7 +121,7 @@ DEFINE_GRADIENT_PALETTE(pit){
     192, 255, 130, 3,  //orange
     255, 3, 3, 3};
 
-void noise_noise1() {
+void noise_noise1(bool init = false) {
   // https://gist.github.com/StefanPetrick/c856b6d681ec3122e5551403aabfcc68#file-noise_noise-ino-L27
   constexpr uint8_t NUM_LAYERS = 1;
   static uint32_t x[NUM_LAYERS];
@@ -115,7 +131,11 @@ void noise_noise1() {
   static uint32_t scale_y[NUM_LAYERS];
   static uint8_t noise[1][MATRIX_WIDTH][MATRIX_HEIGHT];
 
-  CRGBPalette16 Pal(pit);
+  if (init) {
+    gPalette = pit;
+  }
+
+  CRGBPalette16 Pal = gPalette;
   constexpr uint8_t XY_SPEED = 5;
 
   //modulate the position so that it increases/decreases x
@@ -182,7 +202,7 @@ void xyMatrixDrawOneFrame(byte startHue8, int8_t yHueDelta8, int8_t xHueDelta8) 
   }
 }
 
-void xyMatrixPattern() {
+void xyMatrixPattern(bool init = false) {
   EVERY_N_MILLISECONDS(1000 / 15) {
     uint32_t ms = millis();
     int32_t yHueDelta32 = ((int32_t)cos16(ms * (27 / 1)) * (350 / MATRIX_WIDTH));
@@ -196,7 +216,7 @@ void xyMatrixPattern() {
   }
 }
 
-void Fire2018() {
+void Fire2018(bool init = false) {
   // https://gist.github.com/StefanPetrick/1ba4584e534ba99ca259c1103754e4c5
   uint32_t x;
   uint32_t y;
@@ -209,7 +229,11 @@ void Fire2018() {
   constexpr uint8_t CentreX = (Width / 2) - 1;
   constexpr uint8_t CentreY = (Height / 2) - 1;
 
-  CRGBPalette16 pal = HeatColors_p;
+  if (init) {
+    gPalette = HeatColors_p;
+  }
+
+  CRGBPalette16 pal = gPalette;
 
   // storage for the noise data
   // adjust the size to suit your setup
@@ -280,12 +304,12 @@ void Fire2018() {
       uint8_t dim = noise[x][y];
 
       // This number is critical
-      // If it´s to low (like 1.1) the fire dosn´t go up far enough.
+      // If it´s to low (like 1.1) the fire doesn´t go up far enough.
       // If it´s to high (like 3) the fire goes up too high.
       // It depends on the framerate which number is best.
       // If the number is not right you loose the uplifting fire clouds
-      // which seperate themself while rising up.
-      dim = dim / 1.4;
+      // which sepperate themself while rising up.
+      dim = dim / 2;
 
       dim = 255 - dim;
 
@@ -302,7 +326,7 @@ void Fire2018() {
   }
 }
 
-void rainbow() {
+void rainbow(bool init = false) {
   // FastLED's built-in rainbow generator
   fill_rainbow(leds, NUM_LEDS, gHue, 7);
 }
@@ -313,27 +337,27 @@ void addGlitter(fract8 chanceOfGlitter, CRGB glitterColor) {
   }
 }
 
-void rainbowWithGlitter() {
+void rainbowWithGlitter(bool init = false) {
   // built-in FastLED rainbow, plus some random sparkly glitter
-  rainbow();
+  rainbow(init);
   addGlitter(80, CRGB::White);
 }
 
-void confetti() {
+void confetti(bool init = false) {
   // random colored speckles that blink in and fade smoothly
   fadeToBlackBy(leds, NUM_LEDS, 10);
   int pos = random16(NUM_LEDS);
   leds[pos] += CHSV(gHue + random8(64), 200, 255);
 }
 
-void sinelon() {
+void sinelon(bool init = false) {
   // a colored dot sweeping back and forth, with fading trails
   fadeToBlackBy(leds, NUM_LEDS, 20);
   int pos = beatsin16(13, 0, NUM_LEDS - 1);
   leds[pos] += CHSV(gHue, 255, 192);
 }
 
-void bpm() {
+void bpm(bool init = false) {
   // colored stripes pulsing at a defined Beats-Per-Minute (BPM)
   uint8_t BeatsPerMinute = 62;
   CRGBPalette16 palette = PartyColors_p;
@@ -343,7 +367,7 @@ void bpm() {
   }
 }
 
-void juggle() {
+void juggle(bool init = false) {
   // eight colored dots, weaving in and out of sync with each other
   fadeToBlackBy(leds, NUM_LEDS, 20);
   byte dothue = 0;
@@ -353,25 +377,34 @@ void juggle() {
   }
 }
 
-void solid() {
-  fill_solid(leds, NUM_LEDS, gBaseColor);
+void solid(bool init = false) {
+  if (init) {
+    gSpeed = 10;
+  }
+
+  CRGB color = gBaseColor;
+
+  uint8_t bpm = map8(gSpeed, 2, 200);
+  color.fadeLightBy(beatsin8(bpm, 0, 200));
+
+  fill_solid(leds, NUM_LEDS, color);
 }
 
-typedef void (*SimplePatternList[])();
-SimplePatternList gPatterns = {connected, Fire2018, solid, noise_noise1, xyMatrixPattern, rainbow, rainbowWithGlitter, confetti, sinelon, juggle, bpm, rainbow, rainbowWithGlitter, confetti, sinelon, juggle};
-// Fireplace, pattern not working
+typedef void (*SimplePatternList[])(bool init);
+SimplePatternList gPatterns = {connected, Fire2018, noise_noise1, xyMatrixPattern, rainbow, rainbowWithGlitter, confetti, sinelon, juggle, bpm, solid};
 
 void nextPattern() {
   Serial.print("nextPattern ");
   Serial.print(gCurrentPatternNumber);
   Serial.print(" to ");
   // add one to the current pattern number, and wrap around at the end
-  gCurrentPatternNumber = (gCurrentPatternNumber + 1) % (PATTERN_COUNT - 1);
-  if (gCurrentPatternNumber == 0) {
+  uint8_t patternNumber = (gCurrentPatternNumber + 1) % (PATTERN_COUNT - 1);
+  if (patternNumber == 0) {
     //skip the `connected` pattern
-    gCurrentPatternNumber++;
+    patternNumber++;
   }
-  Serial.println(gCurrentPatternNumber);
+  changePattern(patternNumber);
+  Serial.println(patternNumber);
 }
 
 // Init ESP Now with fallback
@@ -396,8 +429,19 @@ void configDeviceAP() {
   }
 }
 
-unsigned long gLastMessageTime = 0;  // millis of last received message, we aren't handling overflow;
+void changePattern(uint8_t patternNumber) {
+  gCurrentPatternNumber = patternNumber;
+  gPatterns[gCurrentPatternNumber](true);
+}
 
+void reset() {
+  Serial.println("reset()");
+  gBaseColor = CRGB::White;
+  gPalette = gPalettes[0];
+  changePattern(0);
+}
+
+unsigned long gLastMessageTime = 0;  // millis of last received message, we aren't handling overflow;
 // callback when data is recv from Master
 void OnDataRecv(const uint8_t* mac_addr, const uint8_t* data, int data_len) {
   gLastMessageTime = millis();
@@ -413,10 +457,10 @@ void OnDataRecv(const uint8_t* mac_addr, const uint8_t* data, int data_len) {
 
   if (*data == REMOTE_CONNECTED) {
     Serial.println("REMOTE_CONNECTED");
-    gCurrentPatternNumber = 0;
+    changePattern(0);
     Serial.println("PATTERN CHANGE RCVD");
-  } else if (*data > 0 && *data <= PATTERN_COUNT) {
-    gCurrentPatternNumber = *data;
+  } else if (*data >= PATTERN_ONE && *data <= PATTERN_TEN) {
+    changePattern(*data);
   } else if (*data == 100) {
     // Do Nothing
   } else if (*data > 100) {
@@ -429,6 +473,42 @@ void OnDataRecv(const uint8_t* mac_addr, const uint8_t* data, int data_len) {
       case BRIGHTNESS_DOWN:
         gBrightness = qsub8(gBrightness, 10);
         FastLED.setBrightness(gBrightness);
+        break;
+      case SPEED_UP:
+        gSpeed = qadd8(gSpeed, 10);
+        break;
+      case SPEED_DOWN:
+        gSpeed = qsub8(gSpeed, 10);
+        break;
+      case PALETTE_UP:
+        nextPalette(1);
+        break;
+      case PALETTE_DOWN:
+        nextPalette(-1);
+        break;
+      case ADD_RED:
+        if (gBaseColor.r == 255) {
+          gBaseColor.r = 0;
+        } else {
+          gBaseColor.r += 10;
+        }
+        break;
+      case ADD_GREEN:
+        if (gBaseColor.g == 255) {
+          gBaseColor.g = 0;
+        } else {
+          gBaseColor.g += 10;
+        }
+        break;
+      case ADD_BLUE:
+        if (gBaseColor.b == 255) {
+          gBaseColor.b = 0;
+        } else {
+          gBaseColor.b += 10;
+        }
+        break;
+      case RESET:
+        reset();
         break;
     }
   }
@@ -470,7 +550,7 @@ void loop() {
   }
   // fill_solid(leds, NUM_LEDS, CRGB::Green);
   // Call the current pattern function once, updating the 'leds' array
-  gPatterns[gCurrentPatternNumber]();
+  gPatterns[gCurrentPatternNumber](false);
   FastLED.show();
   // insert a delay to keep the framerate modest
   FastLED.delay(1000 / FRAMES_PER_SECOND);
